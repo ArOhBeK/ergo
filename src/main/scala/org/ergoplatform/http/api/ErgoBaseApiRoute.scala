@@ -15,6 +15,7 @@ import io.circe.syntax.EncoderOps
 import org.ergoplatform.nodeView.ErgoNodeViewHolder.ReceivableMessages.LocallyGeneratedTransaction
 import org.ergoplatform.nodeView.mempool.ErgoMemPoolUtils.ProcessingOutcome
 import org.ergoplatform.nodeView.mempool.ErgoMemPoolUtils.ProcessingOutcome._
+import org.ergoplatform.nodeView.validation.{ValidationBackend, ValidationFailure, ValidationSuccess}
 import scorex.util.encode.Base16
 import sigma.ast.ErgoTree
 import sigma.serialization.ErgoTreeSerializer
@@ -116,24 +117,54 @@ trait ErgoBaseApiRoute extends ApiRoute with ApiCodecs {
   protected def verifyTransaction(
     tx: ErgoTransaction,
     readersHolder: ActorRef,
-    ergoSettings: ErgoSettings
+    ergoSettings: ErgoSettings,
+    backendOpt: Option[ValidationBackend] = None
   ): Future[Try[UnconfirmedTransaction]] = {
     val now: Long = System.currentTimeMillis()
     val bytes     = Some(tx.bytes)
 
-    getStateAndPool(readersHolder)
-      .map {
-        case (utxo: UtxoStateReader, mp: ErgoMemPoolReader) =>
-          val maxTxCost = ergoSettings.nodeSettings.maxTransactionCost
-          val validationContext = utxo.stateContext.simplifiedUpcoming()
-          utxo.withMempool(mp)
-            .validateWithCost(tx, validationContext, maxTxCost, None)
-            .map(cost => new UnconfirmedTransaction(tx, Some(cost), now, now, bytes, source = None))
-        case _ =>
-          tx.statelessValidity()
-            .map(_ => new UnconfirmedTransaction(tx, None, now, now, bytes, source = None)
-            )
-      }
+    backendOpt match {
+      case Some(backend) if ergoSettings.nodeSettings.executionMode.isThin =>
+        val heightF = getStateAndPool(readersHolder)
+          .map(_._1.stateContext.currentHeight)
+          .recover { case _ => 0 }
+
+        for {
+          height <- heightF
+          ctx    <- backend.getInputContext(tx.inputs.map(_.boxId), height)
+          _ = log.info(
+            s"Thin-mode validation flow for tx ${tx.id}: fetched ${ctx.boxes.size} inputs at height $height via backend ${backend.backendId}"
+          )
+          validation <- backend.validateTransaction(tx)
+        } yield validation match {
+          case success: ValidationSuccess =>
+            Success(success.unconfirmed)
+          case failure: ValidationFailure =>
+            Failure(failure.throwable.getOrElse(new IllegalArgumentException(failure.reason)))
+        }
+      case Some(backend) =>
+        backend.validateTransaction(tx).map {
+          case success: ValidationSuccess =>
+            Success(success.unconfirmed)
+          case failure: ValidationFailure =>
+            Failure(failure.throwable.getOrElse(new IllegalArgumentException(failure.reason)))
+        }
+      case None =>
+        getStateAndPool(readersHolder)
+          .map {
+            case (utxo: UtxoStateReader, mp: ErgoMemPoolReader) =>
+              val maxTxCost        = ergoSettings.nodeSettings.maxTransactionCost
+              val validationContext = utxo.stateContext.simplifiedUpcoming()
+              utxo
+                .withMempool(mp)
+                .validateWithCost(tx, validationContext, maxTxCost, None)
+                .map(cost => new UnconfirmedTransaction(tx, Some(cost), now, now, bytes, source = None))
+            case _ =>
+              tx
+                .statelessValidity()
+                .map(_ => new UnconfirmedTransaction(tx, None, now, now, bytes, source = None))
+          }
+    }
   }
 
 }

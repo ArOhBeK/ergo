@@ -9,6 +9,7 @@ import org.ergoplatform.mining.CandidateGenerator.Candidate
 import org.ergoplatform.mining.{AutolykosSolution, CandidateGenerator, ErgoMiner}
 import org.ergoplatform.modifiers.mempool.ErgoTransaction
 import org.ergoplatform.nodeView.wallet.ErgoAddressJsonEncoder
+import org.ergoplatform.nodeView.validation.{MiningParams, ValidationBackend}
 import org.ergoplatform.settings.{ErgoSettings, RESTApiSettings}
 import org.ergoplatform.{ErgoAddress, ErgoTreePredef, Pay2SAddress}
 import scorex.core.api.http.ApiResponse
@@ -17,7 +18,8 @@ import sigma.data.ProveDlog
 import scala.concurrent.Future
 
 case class MiningApiRoute(miner: ActorRef,
-                          ergoSettings: ErgoSettings)
+                          ergoSettings: ErgoSettings,
+                          validationBackend: ValidationBackend)
                          (implicit val context: ActorRefFactory) extends ErgoBaseApiRoute with ApiCodecs {
 
   val settings: RESTApiSettings = ergoSettings.scorexSettings.restApi
@@ -36,9 +38,20 @@ case class MiningApiRoute(miner: ActorRef,
     * Get block candidate. Useful for external miners.
     */
   def candidateR: Route = (path("candidate") & pathEndOrSingleSlash & get) {
-    val prepareCmd = CandidateGenerator.GenerateCandidate(Seq.empty, reply = true, forced = false)
-    val candidateF = miner.askWithStatus(prepareCmd).mapTo[Candidate].map(_.externalVersion)
-    ApiResponse(candidateF)
+    val isThin = ergoSettings.nodeSettings.executionMode.isThin
+    val responseF =
+      if (isThin) {
+        validationBackend
+          .buildBlockTemplate(MiningParams())
+          .map(_.workMessage.getOrElse(throw new IllegalStateException("Backend did not provide work message")))
+      } else {
+        val prepareCmd = CandidateGenerator.GenerateCandidate(Seq.empty, reply = true, forced = false)
+        miner.askWithStatus(prepareCmd).mapTo[Candidate].map(_.externalVersion)
+      }
+    completeOrRecoverWith(responseF) { ex =>
+      val reason = s"Unable to provide candidate: ${ex.getMessage}"
+      ApiError.BadRequest(reason)
+    }
   }
 
   /**
@@ -48,9 +61,21 @@ case class MiningApiRoute(miner: ActorRef,
   def candidateWithTxsR: Route = (path("candidateWithTxs")
     & post & entity(as[Seq[ErgoTransaction]]) & withAuth) { txs =>
 
-    val prepareCmd = CandidateGenerator.GenerateCandidate(txs, reply = true, forced = false)
-    val candidateF = miner.askWithStatus(prepareCmd).mapTo[Candidate].map(_.externalVersion)
-    ApiResponse(candidateF)
+    val isThin = ergoSettings.nodeSettings.executionMode.isThin
+    val responseF =
+      if (isThin) {
+        validationBackend
+          .buildBlockTemplate(MiningParams(txsToInclude = txs.size))
+          .map(_.workMessage.getOrElse(throw new IllegalStateException("Backend did not provide work message")))
+      } else {
+        val prepareCmd = CandidateGenerator.GenerateCandidate(txs, reply = true, forced = false)
+        miner.askWithStatus(prepareCmd).mapTo[Candidate].map(_.externalVersion)
+      }
+
+    completeOrRecoverWith(responseF) { ex =>
+      val reason = s"Unable to provide candidate: ${ex.getMessage}"
+      ApiError.BadRequest(reason)
+    }
   }
 
   def solutionR: Route = (path("solution") & post & entity(as[AutolykosSolution])) { solution =>

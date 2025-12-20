@@ -41,12 +41,37 @@ class ExtraIndexerTestActor(test: ExtraIndexerSpecification) extends ExtraIndexe
   override protected implicit val segmentThreshold: Int = 8 // split to smaller segments
   override protected implicit val addressEncoder: ErgoAddressEncoder = test.initSettings.chainSettings.addressEncoder
 
-  val nodeSettings: NodeConfigurationSettings = NodeConfigurationSettings(StateType.Utxo, verifyTransactions = true,
-    -1, UtxoSettings(utxoBootstrap = false, 0, 2), NipopowSettings(nipopowBootstrap = false, 1), mining = false,
-    ChainGenerator.txCostLimit, ChainGenerator.txSizeLimit, blockCandidateGenerationInterval = 20.seconds, useExternalMiner = false,
-    internalMinersCount = 1, internalMinerPollingInterval = 1.second, miningPubKeyHex = None, offlineGeneration = false,
-    200, 5.minutes, 100000, 1.minute, mempoolSorting = SortingOption.FeePerByte, rebroadcastCount = 20,
-    1000000, headerChainDiff = 5000, adProofsSuffixLength = 112 * 1024, extraIndex = false)
+  val nodeSettings: NodeConfigurationSettings = NodeConfigurationSettings(
+    StateType.Utxo,
+    verifyTransactions = true,
+    verifyScripts = true,
+    -1,
+    UtxoSettings(utxoBootstrap = false, 0, 2),
+    NipopowSettings(nipopowBootstrap = false, 1),
+    mining = false,
+    ChainGenerator.txCostLimit,
+    ChainGenerator.txSizeLimit,
+    blockCandidateGenerationInterval = 20.seconds,
+    useExternalMiner = false,
+    internalMinersCount = 1,
+    internalMinerPollingInterval = 1.second,
+    miningPubKeyHex = None,
+    offlineGeneration = false,
+    200,
+    5.minutes,
+    100000,
+    1.minute,
+    mempoolSorting = SortingOption.FeePerByte,
+    rebroadcastCount = 20,
+    1000000,
+    headerChainDiff = 5000,
+    adProofsSuffixLength = 112 * 1024,
+    extraIndex = false,
+    blacklistedTransactions = Seq.empty,
+    checkpoint = None,
+    executionMode = ExecutionMode.Full,
+    validationEndpoint = "grpc://validation-core:9053"
+  )
 
   private var dir: File = _
   private var stateOpt: Option[UtxoState] = None

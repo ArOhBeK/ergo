@@ -27,6 +27,7 @@ trait CheckpointingSettingsReader extends ModifierIdReader {
   */
 case class NodeConfigurationSettings(override val stateType: StateType,
                                      override val verifyTransactions: Boolean,
+                                     verifyScripts: Boolean = true,
                                      override val blocksToKeep: Int,
                                      override val utxoSettings: UtxoSettings,
                                      override val nipopowSettings: NipopowSettings,
@@ -50,7 +51,9 @@ case class NodeConfigurationSettings(override val stateType: StateType,
                                      adProofsSuffixLength: Int,
                                      extraIndex: Boolean,
                                      blacklistedTransactions: Seq[String] = Seq.empty,
-                                     checkpoint: Option[CheckpointSettings] = None) extends ClientCapabilities {
+                                     checkpoint: Option[CheckpointSettings] = None,
+                                     executionMode: ExecutionMode = ExecutionMode.Full,
+                                     validationEndpoint: String = "grpc://validation-core:9053") extends ClientCapabilities {
   /**
     * Whether the node keeping all the full blocks of the blockchain or not.
     * @return true if the blockchain is pruned, false if not
@@ -72,6 +75,7 @@ trait NodeConfigurationReaders extends StateTypeReaders with CheckpointingSettin
     NodeConfigurationSettings(
       stateType,
       cfg.as[Boolean](s"$path.verifyTransactions"),
+      cfg.getAs[Boolean](s"$path.verifyScripts").getOrElse(true),
       cfg.as[Int](s"$path.blocksToKeep"),
       cfg.as[UtxoSettings](s"$path.utxo"),
       cfg.as[NipopowSettings](s"$path.nipopow"),
@@ -95,7 +99,9 @@ trait NodeConfigurationReaders extends StateTypeReaders with CheckpointingSettin
       cfg.as[Int](s"$path.adProofsSuffixLength"),
       cfg.as[Boolean](s"$path.extraIndex"),
       cfg.as[Seq[String]](s"$path.blacklistedTransactions"),
-      cfg.as[Option[CheckpointSettings]](s"$path.checkpoint")
+      cfg.as[Option[CheckpointSettings]](s"$path.checkpoint"),
+      cfg.getAs[ExecutionMode](s"$path.execution.mode").getOrElse(ExecutionMode.Full),
+      cfg.getAs[String](s"$path.validation.endpoint").getOrElse("grpc://validation-core:9053")
     )
   }
 

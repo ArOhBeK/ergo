@@ -2,6 +2,7 @@ package org.ergoplatform.settings
 
 import org.ergoplatform.nodeView.mempool.ErgoMemPoolUtils.SortingOption
 import org.ergoplatform.nodeView.state.StateType
+import org.ergoplatform.settings.ExecutionMode
 import org.ergoplatform.utils.ErgoCorePropertyTest
 
 import java.net.{InetSocketAddress, URL}
@@ -24,6 +25,7 @@ class ErgoSettingsSpecification extends ErgoCorePropertyTest {
     settings.nodeSettings shouldBe NodeConfigurationSettings(
       StateType.Utxo,
       verifyTransactions = true,
+      verifyScripts = true,
       1000,
       utxoSettings = UtxoSettings(false, 0, 2),
       nipopowSettings = NipopowSettings(false, 1),
@@ -45,7 +47,11 @@ class ErgoSettingsSpecification extends ErgoCorePropertyTest {
       minimalFeeAmount                          = 0,
       headerChainDiff                           = 100,
       adProofsSuffixLength                      = 112*1024,
-      extraIndex                                = false
+      extraIndex                                = false,
+      blacklistedTransactions                   = Seq.empty,
+      checkpoint                                = None,
+      executionMode                             = ExecutionMode.Full,
+      validationEndpoint                        = "grpc://validation-core:9053"
     )
     settings.cacheSettings shouldBe CacheSettings(
       HistoryCacheSettings(
@@ -74,6 +80,7 @@ class ErgoSettingsSpecification extends ErgoCorePropertyTest {
     settings.nodeSettings shouldBe NodeConfigurationSettings(
       StateType.Utxo,
       verifyTransactions = true,
+      verifyScripts = true,
       12,
       utxoSettings = UtxoSettings(false, 0, 2),
       nipopowSettings = NipopowSettings(false, 1),
@@ -95,7 +102,11 @@ class ErgoSettingsSpecification extends ErgoCorePropertyTest {
       minimalFeeAmount                          = 0,
       headerChainDiff                           = 100,
       adProofsSuffixLength                      = 112*1024,
-      extraIndex                                = false
+      extraIndex                                = false,
+      blacklistedTransactions                   = Seq.empty,
+      checkpoint                                = None,
+      executionMode                             = ExecutionMode.Full,
+      validationEndpoint                        = "grpc://validation-core:9053"
     )
     settings.cacheSettings shouldBe CacheSettings(
       HistoryCacheSettings(
@@ -117,6 +128,7 @@ class ErgoSettingsSpecification extends ErgoCorePropertyTest {
     settings.nodeSettings shouldBe NodeConfigurationSettings(
       StateType.Utxo,
       verifyTransactions = true,
+      verifyScripts = true,
       13,
       utxoSettings = UtxoSettings(false, 0, 2),
       nipopowSettings = NipopowSettings(false, 1),
@@ -138,7 +150,11 @@ class ErgoSettingsSpecification extends ErgoCorePropertyTest {
       minimalFeeAmount                          = 0,
       headerChainDiff                           = 100,
       adProofsSuffixLength                      = 112*1024,
-      extraIndex                                = false
+      extraIndex                                = false,
+      blacklistedTransactions                   = Seq.empty,
+      checkpoint                                = None,
+      executionMode                             = ExecutionMode.Full,
+      validationEndpoint                        = "grpc://validation-core:9053"
     )
     settings.cacheSettings shouldBe CacheSettings(
       HistoryCacheSettings(

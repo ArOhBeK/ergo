@@ -4,6 +4,7 @@ import akka.Done
 import akka.actor.{ActorRef, ActorSystem, CoordinatedShutdown}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
+import akka.util.Timeout
 import org.ergoplatform.http._
 import org.ergoplatform.http.api._
 import org.ergoplatform.local._
@@ -13,7 +14,8 @@ import org.ergoplatform.network.{ErgoNodeViewSynchronizer, ErgoSyncTracker}
 import org.ergoplatform.nodeView.history.ErgoSyncInfoMessageSpec
 import org.ergoplatform.nodeView.history.extra.ExtraIndexer
 import org.ergoplatform.nodeView.{ErgoNodeViewRef, ErgoReadersHolderRef}
-import org.ergoplatform.settings.{Args, ErgoSettings, ErgoSettingsReader, NetworkType, ScorexSettings}
+import org.ergoplatform.nodeView.validation.ValidationBackendProvider
+import org.ergoplatform.settings.{Args, ErgoSettings, ErgoSettingsReader, NetworkType, ScorexSettings, WalletMode}
 import scorex.core.api.http._
 import scorex.core.app.ScorexContext
 import scorex.core.network.NetworkController.ReceivableMessages.ShutdownNetwork
@@ -43,6 +45,14 @@ class ErgoApp(args: Args) extends ScorexLogging {
   )
   log.info(s"Working directory: ${ergoSettings.directory}")
   log.info(s"Secret directory: ${ergoSettings.walletSettings.secretStorage.secretDir}")
+  if (ergoSettings.nodeSettings.executionMode.isThin) {
+    log.info(
+      s"Thin execution mode enabled; validation endpoint: ${ergoSettings.nodeSettings.validationEndpoint}; wallet mode: ${ergoSettings.walletSettings.walletMode}"
+    )
+    if (ergoSettings.walletSettings.walletMode == WalletMode.Delegated) {
+      log.warn("Wallet mode 'delegated' enabled: wallet queries will be served by the validation core")
+    }
+  }
 
   implicit private def scorexSettings: ScorexSettings = ergoSettings.scorexSettings
 
@@ -51,6 +61,7 @@ class ErgoApp(args: Args) extends ScorexLogging {
   )
 
   implicit private val executionContext: ExecutionContext = actorSystem.dispatcher
+  implicit private val askTimeout: Timeout = Timeout(ergoSettings.scorexSettings.restApi.timeout)
 
   private val upnpGateway: Option[UPnPGateway] =
     if (scorexSettings.network.upnpEnabled) UPnP.getValidGateway(scorexSettings.network)
@@ -97,6 +108,8 @@ class ErgoApp(args: Args) extends ScorexLogging {
   private val nodeViewHolderRef: ActorRef = ErgoNodeViewRef(ergoSettings)
 
   private val readersHolderRef: ActorRef = ErgoReadersHolderRef(nodeViewHolderRef)
+
+  private val validationBackend = ValidationBackendProvider(ergoSettings, readersHolderRef)
 
   // Create an instance of ErgoMiner actor if "mining = true" in config
   private val minerRefOpt: Option[ActorRef] =
@@ -194,13 +207,13 @@ class ErgoApp(args: Args) extends ScorexLogging {
     InfoApiRoute(statsCollectorRef, scorexSettings.restApi),
     BlocksApiRoute(nodeViewHolderRef, readersHolderRef, ergoSettings),
     NipopowApiRoute(nodeViewHolderRef, readersHolderRef, ergoSettings),
-    TransactionsApiRoute(readersHolderRef, nodeViewHolderRef, ergoSettings),
-    WalletApiRoute(readersHolderRef, nodeViewHolderRef, ergoSettings),
+    TransactionsApiRoute(readersHolderRef, nodeViewHolderRef, ergoSettings, validationBackend),
+    WalletApiRoute(readersHolderRef, nodeViewHolderRef, ergoSettings, validationBackend),
     UtxoApiRoute(readersHolderRef, scorexSettings.restApi),
     ScriptApiRoute(readersHolderRef, ergoSettings),
     ScanApiRoute(readersHolderRef, ergoSettings),
-    NodeApiRoute(ergoSettings)
-  ) ++ minerRefOpt.map(minerRef => MiningApiRoute(minerRef, ergoSettings)).toSeq
+    NodeApiRoute(ergoSettings, validationBackend)
+  ) ++ minerRefOpt.map(minerRef => MiningApiRoute(minerRef, ergoSettings, validationBackend)).toSeq
 
   private val swaggerRoute = SwaggerRoute(scorexSettings.restApi, swaggerConfig)
   private val panelRoute   = NodePanelRoute()

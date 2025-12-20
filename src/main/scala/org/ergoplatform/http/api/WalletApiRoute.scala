@@ -12,6 +12,7 @@ import org.ergoplatform.nodeView.ErgoReadersHolder.{GetReaders, Readers}
 import org.ergoplatform.nodeView.wallet._
 import org.ergoplatform.nodeView.wallet.requests._
 import org.ergoplatform.settings.{ErgoSettings, RESTApiSettings}
+import org.ergoplatform.nodeView.validation.ValidationBackend
 import org.ergoplatform.wallet.Constants
 import org.ergoplatform.wallet.Constants.ScanId
 import org.ergoplatform.wallet.boxes.ErgoBoxSerializer
@@ -27,7 +28,8 @@ import org.ergoplatform.sdk.SecretString
 
 case class WalletApiRoute(readersHolder: ActorRef,
                           nodeViewActorRef: ActorRef,
-                          ergoSettings: ErgoSettings)
+                          ergoSettings: ErgoSettings,
+                          validationBackend: ValidationBackend)
                          (implicit val context: ActorRefFactory) extends WalletApiOperations with ApiCodecs with ApiExtraCodecs with ApiRequestsCodecs {
 
   implicit val paymentRequestDecoder: PaymentRequestDecoder = new PaymentRequestDecoder(ergoSettings)
@@ -194,7 +196,7 @@ case class WalletApiRoute(readersHolder: ActorRef,
                               inputsRaw: Seq[String],
                               dataInputsRaw: Seq[String]): Route = {
     generateTransactionAndProcess(requests, inputsRaw, dataInputsRaw,
-      tx => verifyTransaction(tx, readersHolder, ergoSettings),
+      tx => verifyTransaction(tx, readersHolder, ergoSettings, Some(validationBackend)),
       validTx => sendLocalTransactionRoute(nodeViewActorRef, validTx)
     )
   }

@@ -34,29 +34,43 @@ object ErgoSettingsReader extends ScorexLogging
       .getOrElse(throw new Error(s"Unknown `networkType = $networkTypeName`"))
     val nodeSettings = config.as[NodeConfigurationSettings](s"$configPath.node")
     val chainSettings = config.as[ChainSettings](s"$configPath.chain")
-    val walletSettings = config.as[WalletSettings](s"$configPath.wallet")
+    val walletSettingsFromConfig = WalletSettings.walletSettingsReader.read(config, s"$configPath.wallet")
     val cacheSettings = config.as[CacheSettings](s"$configPath.cache")
     val scorexSettings = config.as[ScorexSettings](scorexConfigPath)
     val votingTargets = VotingTargets.fromConfig(config)
 
     overrideLogLevel(scorexSettings.logging.level)
 
-    if (nodeSettings.stateType == Digest && nodeSettings.mining) {
-      log.error("Malformed configuration file was provided! Mining is not possible with digest state. Aborting!")
+    if (nodeSettings.stateType == Digest && nodeSettings.mining && nodeSettings.executionMode != ExecutionMode.Thin) {
+      log.error("Malformed configuration file was provided! Mining is not possible with digest state in full execution mode. Aborting!")
       ErgoApp.forceStopApplication()
     }
+    if (nodeSettings.executionMode.isThin && nodeSettings.mining && !nodeSettings.useExternalMiner) {
+      failWithError("execution.mode=thin requires useExternalMiner=true for mining coordination")
+    }
+
+    val walletModePathDefined = config.hasPath(s"$configPath.wallet.mode")
+
+    val walletSettings = if (nodeSettings.executionMode.isThin && !walletModePathDefined) {
+      log.info("execution.mode=thin without explicit wallet.mode; defaulting wallet.mode=delegated")
+      walletSettingsFromConfig.copy(walletMode = WalletMode.Delegated)
+    } else {
+      walletSettingsFromConfig
+    }
+
+    val settingsBeforeConsistency = ErgoSettings(
+      directory,
+      networkType,
+      chainSettings,
+      nodeSettings,
+      scorexSettings,
+      walletSettings,
+      cacheSettings,
+      votingTargets
+    )
 
     consistentSettings(
-      ErgoSettings(
-        directory,
-        networkType,
-        chainSettings,
-        nodeSettings,
-        scorexSettings,
-        walletSettings,
-        cacheSettings,
-        votingTargets
-      ),
+      enforceExecutionMode(settingsBeforeConsistency),
       desiredNetworkTypeOpt
     )
   }
@@ -197,6 +211,26 @@ object ErgoSettingsReader extends ScorexLogging
     } else {
       settings
     }
+  }
+
+  private def enforceExecutionMode(settings: ErgoSettings): ErgoSettings = {
+    val nodeSettings = settings.nodeSettings
+    if (nodeSettings.executionMode.isThin) {
+      val errors = List(
+        if (!nodeSettings.verifyTransactions) Some("verifyTransactions must be true when execution.mode=thin") else None,
+        if (!nodeSettings.verifyScripts) Some("verifyScripts must be true when execution.mode=thin") else None,
+        if (nodeSettings.stateType != Digest) Some("stateType must be 'digest' when execution.mode=thin") else None,
+        if (nodeSettings.validationEndpoint.trim.isEmpty) Some("validation.endpoint must be set when execution.mode=thin") else None
+      ).flatten
+
+      if (errors.nonEmpty) {
+        failWithError(errors.mkString("; "))
+      }
+      log.info(
+        s"Thin execution mode enabled with validation endpoint ${nodeSettings.validationEndpoint} and wallet mode ${settings.walletSettings.walletMode}"
+      )
+    }
+    settings
   }
 
   private def failWithError(msg: String): Nothing = {

@@ -7,9 +7,10 @@ import de.heikoseeberger.akkahttpcirce.FailFastCirceSupport
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
 import org.ergoplatform.http.api.{ApiCodecs, ApiExtraCodecs, ApiRequestsCodecs, WalletApiRoute}
-import org.ergoplatform.modifiers.mempool.ErgoTransaction
+import org.ergoplatform.modifiers.mempool.{ErgoTransaction, UnconfirmedTransaction}
 import org.ergoplatform.nodeView.wallet.requests.{AssetIssueRequestEncoder, PaymentRequest, PaymentRequestEncoder, _}
 import org.ergoplatform.nodeView.wallet.{AugWalletTransaction, ErgoAddressJsonEncoder}
+import org.ergoplatform.nodeView.validation._
 import org.ergoplatform.settings.{Args, ErgoSettings, ErgoSettingsReader}
 import org.ergoplatform.utils.Stubs
 import org.ergoplatform.{ErgoAddress, Pay2SAddress}
@@ -35,16 +36,30 @@ class WalletApiRouteSpec extends AnyFlatSpec
   import org.ergoplatform.utils.ErgoNodeTestConstants._
 
   implicit val timeout: RouteTestTimeout = RouteTestTimeout(145.seconds)
+  private implicit val ec = system.dispatcher
+
+  private val testBackend: ValidationBackend = new ValidationBackend {
+    override val backendId: String = "test"
+    override def validateTransaction(tx: org.ergoplatform.modifiers.mempool.ErgoTransaction) =
+      scala.concurrent.Future.successful(ValidationSuccess(UnconfirmedTransaction(tx, None), None))
+    override def getInputContext(boxIds: Seq[org.ergoplatform.ErgoBox.BoxId], height: Int) =
+      scala.concurrent.Future.successful(InputContext(Map.empty, height))
+    override def submitTransaction(tx: org.ergoplatform.modifiers.mempool.ErgoTransaction) =
+      scala.concurrent.Future.successful(SubmitAccepted)
+    override def buildBlockTemplate(params: MiningParams) =
+      scala.concurrent.Future.successful(BlockTemplate(None, Seq.empty, 0, backendId))
+    override def status: ValidationStatus = ValidationStatus(backendId, ValidationHealth.Healthy)
+  }
 
   val prefix = "/wallet"
 
   val ergoSettings: ErgoSettings = ErgoSettingsReader.read(
     Args(userConfigPathOpt = Some("src/test/resources/application.conf"), networkTypeOpt = None))
-  val route: Route = WalletApiRoute(digestReadersRef, nodeViewRef, settings).route
+  val route: Route = WalletApiRoute(digestReadersRef, nodeViewRef, settings, testBackend).route
   val failingNodeViewRef = system.actorOf(NodeViewStub.failingProps())
-  val failingRoute: Route = WalletApiRoute(digestReadersRef, failingNodeViewRef, settings).route
+  val failingRoute: Route = WalletApiRoute(digestReadersRef, failingNodeViewRef, settings, testBackend).route
 
-  val utxoRoute: Route = WalletApiRoute(utxoReadersRef, nodeViewRef, settings).route
+  val utxoRoute: Route = WalletApiRoute(utxoReadersRef, nodeViewRef, settings, testBackend).route
 
   implicit val paymentRequestEncoder: PaymentRequestEncoder = new PaymentRequestEncoder(ergoSettings)
   implicit val assetIssueRequestEncoder: AssetIssueRequestEncoder = new AssetIssueRequestEncoder(ergoSettings)

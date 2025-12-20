@@ -14,6 +14,7 @@ import org.ergoplatform.nodeView.ErgoReadersHolder.{GetReaders, Readers}
 import org.ergoplatform.nodeView.mempool.ErgoMemPoolReader
 import org.ergoplatform.nodeView.mempool.HistogramStats.getFeeHistogram
 import org.ergoplatform.nodeView.state.{ErgoStateReader, UtxoStateReader}
+import org.ergoplatform.nodeView.validation.ValidationBackend
 import org.ergoplatform.settings.{Algos, ErgoSettings, RESTApiSettings}
 import scorex.core.api.http.ApiResponse
 import scorex.crypto.authds.ADKey
@@ -27,7 +28,8 @@ import scala.util.{Failure, Success}
 
 case class TransactionsApiRoute(readersHolder: ActorRef,
                                 nodeViewActorRef: ActorRef,
-                                ergoSettings: ErgoSettings)
+                                ergoSettings: ErgoSettings,
+                                validationBackend: ValidationBackend)
                                (implicit val context: ActorRefFactory) extends ErgoBaseApiRoute with ApiCodecs {
 
   override val settings: RESTApiSettings = ergoSettings.scorexSettings.restApi
@@ -160,7 +162,7 @@ case class TransactionsApiRoute(readersHolder: ActorRef,
       BadRequest(s"Transaction $tx has too large size ${tx.size}")
     } else {
       onSuccess {
-        verifyTransaction(tx, readersHolder, ergoSettings)
+        verifyTransaction(tx, readersHolder, ergoSettings, Some(validationBackend))
       } {
         _.fold(
           e => BadRequest(s"Malformed transaction: ${e.getMessage}"),

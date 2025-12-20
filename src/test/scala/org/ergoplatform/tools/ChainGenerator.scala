@@ -62,11 +62,37 @@ object ChainGenerator extends App with ErgoTestHelpers with Matchers {
   val minimalSuffix = 2
   val txCostLimit     = initSettings.nodeSettings.maxTransactionCost
   val txSizeLimit     = initSettings.nodeSettings.maxTransactionSize
-  val nodeSettings: NodeConfigurationSettings = NodeConfigurationSettings(StateType.Utxo, verifyTransactions = true,
-    -1, UtxoSettings(false, 0, 2), NipopowSettings(false, 1), mining = false, txCostLimit, txSizeLimit, blockCandidateGenerationInterval = 20.seconds,
-    useExternalMiner = false, internalMinersCount = 1, internalMinerPollingInterval = 1.second, miningPubKeyHex = None, offlineGeneration = false,
-    200, 5.minutes, 100000, 1.minute, mempoolSorting = SortingOption.FeePerByte, rebroadcastCount = 20,
-    1000000, 100, adProofsSuffixLength = 112*1024, extraIndex = false)
+  val nodeSettings: NodeConfigurationSettings = NodeConfigurationSettings(
+    StateType.Utxo,
+    verifyTransactions = true,
+    verifyScripts = true,
+    -1,
+    UtxoSettings(false, 0, 2),
+    NipopowSettings(false, 1),
+    mining = false,
+    txCostLimit,
+    txSizeLimit,
+    blockCandidateGenerationInterval = 20.seconds,
+    useExternalMiner = false,
+    internalMinersCount = 1,
+    internalMinerPollingInterval = 1.second,
+    miningPubKeyHex = None,
+    offlineGeneration = false,
+    200,
+    5.minutes,
+    100000,
+    1.minute,
+    mempoolSorting = SortingOption.FeePerByte,
+    rebroadcastCount = 20,
+    1000000,
+    100,
+    adProofsSuffixLength = 112 * 1024,
+    extraIndex = false,
+    blacklistedTransactions = Seq.empty,
+    checkpoint = None,
+    executionMode = ExecutionMode.Full,
+    validationEndpoint = "grpc://validation-core:9053"
+  )
   val ms = settings.chainSettings.monetary.copy(
     minerRewardDelay = RewardDelay
   )

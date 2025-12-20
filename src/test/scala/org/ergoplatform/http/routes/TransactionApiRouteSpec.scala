@@ -11,6 +11,7 @@ import org.ergoplatform.ErgoBox.{AdditionalRegisters, NonMandatoryRegisterId, To
 import org.ergoplatform.http.api.{ApiCodecs, TransactionsApiRoute}
 import org.ergoplatform.modifiers.mempool.{ErgoTransaction, UnconfirmedTransaction}
 import org.ergoplatform.nodeView.ErgoReadersHolder.{GetDataFromHistory, GetReaders, Readers}
+import org.ergoplatform.nodeView.validation._
 import org.ergoplatform.settings.RESTApiSettings
 import org.ergoplatform.utils.Stubs
 import org.ergoplatform.{DataInput, ErgoBox, ErgoBoxCandidate, Input}
@@ -36,10 +37,24 @@ class TransactionApiRouteSpec extends AnyFlatSpec
   import org.ergoplatform.utils.ErgoNodeTestConstants._
   import org.ergoplatform.utils.ErgoCoreTestConstants._
 
+  private implicit val ec = system.dispatcher
+
+  private val testBackend: ValidationBackend = new ValidationBackend {
+    override val backendId: String = "test"
+    override def validateTransaction(tx: ErgoTransaction) =
+      scala.concurrent.Future.successful(ValidationSuccess(UnconfirmedTransaction(tx, None), None))
+    override def getInputContext(boxIds: Seq[org.ergoplatform.ErgoBox.BoxId], height: Int) =
+      scala.concurrent.Future.successful(InputContext(Map.empty, height))
+    override def submitTransaction(tx: ErgoTransaction) = scala.concurrent.Future.successful(SubmitAccepted)
+    override def buildBlockTemplate(params: MiningParams) =
+      scala.concurrent.Future.successful(BlockTemplate(None, Seq.empty, 0, backendId))
+    override def status: ValidationStatus = ValidationStatus(backendId, ValidationHealth.Healthy)
+  }
+
   val prefix = "/transactions"
 
   val restApiSettings = RESTApiSettings(new InetSocketAddress("localhost", 8080), None, None, 10.seconds, None)
-  val route: Route = TransactionsApiRoute(utxoReadersRef, nodeViewRef, settings).route
+  val route: Route = TransactionsApiRoute(utxoReadersRef, nodeViewRef, settings, testBackend).route
 
   val inputBox: ErgoBox = utxoState.takeBoxes(1).head
   val input = Input(inputBox.id, emptyProverResult)
@@ -70,7 +85,7 @@ class TransactionApiRouteSpec extends AnyFlatSpec
       }
     }
     val readers2 = system.actorOf(Props(new UtxoReadersStub2))
-    TransactionsApiRoute(readers2, nodeViewRef, settings).route
+    TransactionsApiRoute(readers2, nodeViewRef, settings, testBackend).route
   }
 
   it should "post transaction" in {
